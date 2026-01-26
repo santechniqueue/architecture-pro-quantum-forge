@@ -1,0 +1,11 @@
+{
+  "model": "intfloat/multilingual-e5-base",
+  "embedding_dim": 768,
+  "kb_dir": "/Users/santechniqueue/Documents/Private/Dev/YandexArchitecture/architecture-pro-quantum-forge/Task02/knowledge_base/renamed",
+  "files": 32,
+  "chunks": 703,
+  "chunk_size_chars": 1400,
+  "chunk_overlap_chars": 200,
+  "index_type": "faiss.IndexFlatIP",
+  "build_seconds": 37.826
+}
