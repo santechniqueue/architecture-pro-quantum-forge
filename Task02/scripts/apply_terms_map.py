@@ -1,4 +1,3 @@
-# scripts/apply_terms_map.py
 import json
 import os
 import re
@@ -23,14 +22,11 @@ def _compile_rules(term_map: List[Dict]) -> List[Dict]:
 
             multiword = (" " in a)
 
-            # Ловим: alias + русское окончание (0..10 символов)
-            # Границы: не внутри слова
             pattern = r"(?<![{rus}])({alias})([{rus}]{{0,10}})(?![{rus}])".format(
                 rus=RUS_LETTERS, alias=re.escape(a)
             )
 
             flags = re.UNICODE
-            # если надо менять и lowercase, делаем re.IGNORECASE
             if replace_lowercase and not multiword:
                 flags |= re.IGNORECASE
 
@@ -44,28 +40,18 @@ def _compile_rules(term_map: List[Dict]) -> List[Dict]:
                 }
             )
 
-    # важнейшее: сначала длинные алиасы
     rules.sort(key=lambda r: len(r["alias"]), reverse=True)
     return rules
 
 
 def _apply_rules(text: str, rules: List[Dict]) -> Tuple[str, Dict[str, int]]:
-    stats = {}  # type: Dict[str, int]
+    stats = {}  
 
     def repl_factory(rule: Dict):
         def _repl(m: re.Match) -> str:
-            found = m.group(1)  # то, что совпало по alias (в реальном регистре)
-            # suffix = m.group(2)  # окончание — игнорируем по ТЗ
-
-            # Для много-словных имён (персонажи/локации) обычно хотим
-            # заменять только “как имена собственные” (с заглавной),
-            # чтобы не трогать случайные совпадения в тексте.
+            found = m.group(1)  
             if rule["multiword"] and found and not found[0].isupper():
                 return m.group(0)
-
-            # Для однословных:
-            # - если replace_lowercase=True (расы/группы) — заменяем в любом регистре
-            # - иначе: заменяем только с заглавной (как имя)
             if (not rule["multiword"]) and (not rule["replace_lowercase"]):
                 if not (found and found[0].isupper()):
                     return m.group(0)
@@ -73,7 +59,6 @@ def _apply_rules(text: str, rules: List[Dict]) -> Tuple[str, Dict[str, int]]:
             key = rule["alias"]
             stats[key] = stats.get(key, 0) + 1
 
-            # если совпадение было с маленькой буквы — делаем target тоже с маленькой
             dst = rule["dst"]
             if found and found[0].islower():
                 dst = dst[:1].lower() + dst[1:]

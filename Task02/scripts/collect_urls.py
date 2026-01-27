@@ -6,8 +6,8 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, List
 
-BASE = "https://wowwiki.fandom.com"   # <-- ВАЖНО: без /ru
-API = BASE + "/ru/api.php"           # <-- ВАЖНО: /ru/api.php
+BASE = "https://wowwiki.fandom.com"   
+API = BASE + "/ru/api.php"           
 
 CATEGORIES = [
     "Категория:Персонажи",
@@ -32,7 +32,6 @@ def _page_url(title: str) -> str:
     if t.startswith("/"):
         t = t[1:]
 
-    # если уже ru/wiki/... — не добавляем второй раз
     if t.lower().startswith("ru/wiki/"):
         path = t[len("ru/wiki/"):]
     else:

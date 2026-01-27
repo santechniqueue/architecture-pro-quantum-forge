@@ -22,19 +22,16 @@ class ChunkRecord:
 
 
 def extract_title(md: str, fallback: str) -> str:
-    # Первый заголовок уровня # / ## / ### ... (без regex)
     for raw in md.splitlines():
         line = raw.lstrip()
         if not line.startswith("#"):
             continue
-        # посчитаем решётки
         i = 0
         n = len(line)
         while i < n and line[i] == "#":
             i += 1
         if i == 0:
             continue
-        # нужен пробел после #...#, иначе это может быть не заголовок
         if i < n and line[i] == " ":
             title = line[i:].strip()
             if title:
@@ -95,13 +92,11 @@ def _strip_fenced_code(s: str) -> str:
                     fence_char = ch
                     fence_len = run
                 else:
-                    # закрываем только тем же символом и длиной >= fence_len
                     if ch == fence_char and run >= fence_len:
                         in_fence = False
                         fence_char = ""
                         fence_len = 0
 
-                # пропускаем до конца строки (язык после ``` тоже выкидываем)
                 while j < n and s[j] != "\n":
                     j += 1
                 i = j
@@ -169,7 +164,7 @@ def _rewrite_links_and_images(s: str) -> str:
     n = len(s)
 
     while i < n:
-        # image: ![alt](url)
+        
         if s[i] == "!" and i + 1 < n and s[i + 1] == "[":
             alt, after_br = _parse_bracketed(s, i + 1)
             if alt is not None and after_br < n and s[after_br] == "(":
@@ -181,7 +176,6 @@ def _rewrite_links_and_images(s: str) -> str:
                     i = after_par
                     continue
 
-        # link: [text](url)
         if s[i] == "[":
             txt, after_br = _parse_bracketed(s, i)
             if txt is not None and after_br < n and s[after_br] == "(":
@@ -276,21 +270,12 @@ def _parse_parenthesized(s: str, start_i: int) -> Tuple[str | None, int | None]:
 
 
 def _strip_md_line_prefixes(s: str) -> str:
-    """
-    Убирает маркеры:
-      - заголовки "# ", "## "...
-      - цитаты "> "
-      - списки "- ", "* ", "+ "
-      - нумерованные "1. ", "23. "
-    Без regex: работаем построчно.
-    """
     lines = s.splitlines()
     out_lines: List[str] = []
 
     for raw in lines:
         line = raw.lstrip()
 
-        # headings: #### Title
         if line.startswith("#"):
             i = 0
             n = len(line)
@@ -299,9 +284,7 @@ def _strip_md_line_prefixes(s: str) -> str:
             if i < n and line[i] == " ":
                 line = line[i + 1 :].lstrip()
 
-        # blockquote: > text
         if line.startswith(">"):
-            # допускаем "> " или ">>> "
             i = 0
             n = len(line)
             while i < n and line[i] == ">":
@@ -311,12 +294,9 @@ def _strip_md_line_prefixes(s: str) -> str:
             else:
                 line = line[i:].lstrip()
 
-        # unordered lists: - / * / +
         if line.startswith("- ") or line.startswith("* ") or line.startswith("+ "):
             line = line[2:].lstrip()
 
-        # ordered lists: "1. " "23. "
-        # проверяем: digits + ". " в начале
         j = 0
         n = len(line)
         while j < n and line[j].isdigit():
@@ -330,10 +310,8 @@ def _strip_md_line_prefixes(s: str) -> str:
 
 
 def _normalize_whitespace(s: str) -> str:
-    # табы -> пробелы
     s = s.replace("\t", " ")
 
-    # схлопнуть пробелы
     out_chars: List[str] = []
     prev_space = False
     for ch in s:
@@ -346,7 +324,6 @@ def _normalize_whitespace(s: str) -> str:
             prev_space = False
     s = "".join(out_chars)
 
-    # trim lines + схлопнуть пустые строки
     lines = [ln.strip() for ln in s.splitlines()]
     out_lines: List[str] = []
     empty_streak = 0
@@ -399,7 +376,6 @@ def chunk_with_offsets(text: str, splitter: RecursiveCharacterTextSplitter) -> L
 
         idx = text.find(ch, cursor)
         if idx == -1:
-            # если exact не нашли — считаем оффсеты неизвестными
             start = -1
             end = -1
         else:
@@ -445,7 +421,6 @@ def main() -> None:
     if not files:
         raise SystemExit(f"No .md files found in: {kb_dir}")
 
-    # 1) Чанки + мета
     chunk_records: List[ChunkRecord] = []
     for fp in tqdm(files, desc="Chunking files"):
         rel = fp.relative_to(kb_dir).as_posix()
@@ -480,11 +455,9 @@ def main() -> None:
     if not chunk_records:
         raise SystemExit("No chunks produced (all files empty?)")
 
-    # 2) Эмбеддинги
     t0 = time.perf_counter()
     model = SentenceTransformer(args.model)
 
-    # Для E5: префиксы обязательны
     passages = [e5_passage(r.text) for r in chunk_records]
 
     embeddings: List[np.ndarray] = []
@@ -496,14 +469,12 @@ def main() -> None:
 
     dt = time.perf_counter() - t0
 
-    # 3) FAISS (cosine ~= inner product при нормализации)
     dim = X.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(X)
 
     faiss.write_index(index, str(index_path))
 
-    # 4) chunks + мета
     with chunks_path.open("w", encoding="utf-8") as f:
         for r in chunk_records:
             f.write(json.dumps({"chunk_id": r.chunk_id, "text": r.text, "meta": r.meta}, ensure_ascii=False) + "\n")

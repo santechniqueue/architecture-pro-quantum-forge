@@ -9,7 +9,7 @@ RUS = r"А-Яа-яЁё"
 
 def verify_uniqueness(renamed_dir: Path, terms_map_file: Path) -> None:
     term_map = json.loads(terms_map_file.read_text(encoding="utf-8"))
-    sources = [t["source"] for t in term_map if t.get("source")]  # type: List[str]
+    sources = [t["source"] for t in term_map if t.get("source")]  
     sources.sort(key=len, reverse=True)
 
     parts = []

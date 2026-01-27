@@ -1,4 +1,3 @@
-# scripts/utils.py
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,7 +43,6 @@ def ensure_dirs(paths: Paths) -> None:
 
 
 def wipe_artifacts(paths: Paths) -> None:
-    # удаляем только артефакты пайплайна
     for d in [paths.raw_dir, paths.renamed_dir]:
         if d.exists():
             shutil.rmtree(d)
