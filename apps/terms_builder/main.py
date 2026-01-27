@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from scripts.utils import build_paths, ensure_dirs, wipe_artifacts
-from scripts.download_and_clean import download_and_clean
-from scripts.build_terms_map import build_terms_map
-from scripts.apply_terms_map import apply_terms_map
-from scripts.verify_uniqueness import verify_uniqueness
+from apps.terms_builder.src.utils import build_paths, ensure_dirs, wipe_artifacts
+from apps.terms_builder.src.download_and_clean import download_and_clean
+from apps.terms_builder.src.build_terms_map import build_terms_map
+from apps.terms_builder.src.apply_terms_map import apply_terms_map
+from apps.terms_builder.src.verify_uniqueness import verify_uniqueness
 
 def run(paths, recollect: bool = False) -> None:
     if recollect:

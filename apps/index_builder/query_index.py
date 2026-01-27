@@ -24,7 +24,7 @@ def load_chunks(path: Path) -> List[Dict[str, Any]]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index_dir", default="Task03/index")
+    ap.add_argument("--index_dir", default="knowledge_base/index")
     ap.add_argument("--model", default="intfloat/multilingual-e5-base")
     ap.add_argument("--q", required=True)
     ap.add_argument("--k", type=int, default=5)

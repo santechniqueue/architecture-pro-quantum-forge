@@ -399,7 +399,7 @@ def e5_query(text: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kb_dir", default="Task02/knowledge_base/renamed", help="Папка с KB .md")
-    ap.add_argument("--out_dir", default="Task03/index", help="Куда сохранять индекс и метаданные")
+    ap.add_argument("--out_dir", default="knowledge_base/index", help="Куда сохранять индекс и метаданные")
     ap.add_argument("--model", default="intfloat/multilingual-e5-base", help="Модель эмбеддингов")
     ap.add_argument("--chunk_size", type=int, default=1400, help="Размер чанка в символах (RecursiveCharacterTextSplitter)")
     ap.add_argument("--chunk_overlap", type=int, default=200, help="Оверлап чанков в символах")
