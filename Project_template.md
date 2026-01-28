@@ -125,7 +125,7 @@
   Для E5 применяется префикс `passage:` для документов и `query:` для запросов.
 
 ## 2. База знаний
-- Директория KB: `Task02/knowledge_base/renamed`
+- Директория KB: `knowledge_base/renamed`
 - Формат документов: `.md` (предварительно очищаются от Markdown-разметки и переводятся в “plain text”)
 
 ## 3. Чанкинг
@@ -145,7 +145,7 @@
 
 ```bash
 python3 apps/index_builder/build_index.py \
-  --kb_dir Task02/knowledge_base/renamed \
+  --kb_dir knowledge_base/renamed \
   --out_dir knowledge_base/index \
   --model intfloat/multilingual-e5-base \
   --chunk_size 1400 \
@@ -199,7 +199,7 @@ python3 apps/index_builder/query_index.py \
 
 ## Индекс
 
-Используется индекс из Task03:
+Используется индекс из knowledge_base/index:
 - `knowledge_base/index/faiss.index`
 - `knowledge_base/index/chunks.jsonl`
 - `knowledge_base/index/index_meta.json`
@@ -207,7 +207,6 @@ python3 apps/index_builder/query_index.py \
 ## Запуск
 
 ```bash
-cd Task04
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt 
