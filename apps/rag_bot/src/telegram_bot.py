@@ -1,48 +1,75 @@
 import argparse
+import os
+import sys
 from pathlib import Path
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-from env import EnvConfig
-from rag_core import make_bot_from_env
+from rag_core import make_bot_from_env, RagBot
 
 
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Привет! Я RAG-бот по базе знаний.\n"
-        "Просто задай вопрос, и я отвечу на основе найденных фрагментов.\n"
-    )
+def _env_default_str(name: str) -> str:
+    return os.getenv(name, "").strip()
+
+
+def _env_default_int(name: str, fallback: int) -> int:
+    v = os.getenv(name, "").strip()
+    if not v:
+        return fallback
+    try:
+        return int(v)
+    except ValueError:
+        return fallback
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Привет! Я RAG-бот. Спроси меня о базе знаний.")
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Просто отправь вопрос сообщением. Я отвечу с источниками.")
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    bot: RagBot = context.bot_data["rag_bot"]
+    q = (update.message.text or "").strip()
+    if not q:
+        return
+    try:
+        ans = bot.answer(q)
+    except Exception as e:
+        ans = f"Ошибка при обработке запроса: {type(e).__name__}: {e}"
+    await update.message.reply_text(ans)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index_dir", required=True, help="Папка с faiss.index + chunks.jsonl")
-    ap.add_argument("--embed_model", default="intfloat/multilingual-e5-base", help="SentenceTransformer для эмбеддингов")
-    ap.add_argument("--k", type=int, default=5, help="Top-k чанков")
-    ap.add_argument("--env_path", default=None, help="Путь к .env (опционально)")
+    ap.add_argument("--index_dir", default=None, help="Папка с индексом (faiss.index + chunks.jsonl)")
+    ap.add_argument("--embed_model", default=None, help="Модель эмбеддингов (SentenceTransformers)")
+    ap.add_argument("--k", type=int, default=None, help="Top-K для поиска")
     args = ap.parse_args()
 
-    cfg = EnvConfig.from_env(env_path=args.env_path)
+    token = _env_default_str("TELEGRAM_BOT_TOKEN")
+    if not token:
+        print("TELEGRAM_BOT_TOKEN is empty. Put it in .env or export env var.")
+        sys.exit(1)
 
-    bot = make_bot_from_env(
-        index_dir=Path(args.index_dir).resolve(),
-        embed_model_name=args.embed_model,
-        top_k=args.k,
-    )
+    index_dir = args.index_dir or _env_default_str("RAG_INDEX_DIR")
+    embed_model = args.embed_model or _env_default_str("RAG_EMBED_MODEL") or "intfloat/multilingual-e5-base"
+    top_k = args.k if args.k is not None else _env_default_int("RAG_TOP_K", 5)
 
-    async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message or not update.message.text:
-            return
-        q = update.message.text.strip()
-        if not q:
-            return
-        ans = bot.answer(q)
-        await update.message.reply_text(ans)
+    if not index_dir:
+        raise SystemExit("index_dir is required (pass --index_dir or set RAG_INDEX_DIR)")
 
-    app = Application.builder().token(cfg.telegram_bot_token).build()
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    rag_bot = make_bot_from_env(index_dir=Path(index_dir), embed_model_name=embed_model, top_k=top_k)
+
+    app = ApplicationBuilder().token(token).build()
+    app.bot_data["rag_bot"] = rag_bot
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("Telegram bot started.")
     app.run_polling()
