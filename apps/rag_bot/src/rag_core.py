@@ -12,6 +12,31 @@ from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 
 
+def _env_str(name: str, fallback: str = "") -> str:
+    v = os.getenv(name, "").strip()
+    return v if v else fallback
+
+
+def _env_int(name: str, fallback: int) -> int:
+    v = os.getenv(name, "").strip()
+    if not v:
+        return fallback
+    try:
+        return int(v)
+    except ValueError:
+        return fallback
+
+
+def _env_float(name: str, fallback: float) -> float:
+    v = os.getenv(name, "").strip()
+    if not v:
+        return fallback
+    try:
+        return float(v)
+    except ValueError:
+        return fallback
+
+
 def sha1(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
@@ -119,26 +144,24 @@ class Chunk:
 class FaissIndex:
     def __init__(self, index: faiss.Index, chunks: List[Chunk]) -> None:
         self.index = index
-        self.chunks = chunks
+        self.by_id: Dict[int, Chunk] = {}
+        for ch in chunks:
+            fid = int(ch.meta.get("faiss_id", 0))
+            if hasattr(ch, "faiss_id"):
+                fid = int(getattr(ch, "faiss_id"))
+            if fid:
+                self.by_id[fid] = ch
 
     @staticmethod
     def load(index_dir: Path) -> "FaissIndex":
-        index_path = index_dir / "faiss.index"
-        chunks_path = index_dir / "chunks.jsonl"
-
-        if not index_path.exists():
-            raise FileNotFoundError(f"FAISS index not found: {index_path}")
-        if not chunks_path.exists():
-            raise FileNotFoundError(f"chunks.jsonl not found: {chunks_path}")
-
-        index = faiss.read_index(str(index_path))
+        index = faiss.read_index(str(index_dir / "faiss.index"))
+        inner = index.index
+        if hasattr(inner, "nprobe"):
+            inner.nprobe = int(os.getenv("FAISS_NPROBE", "8"))
 
         chunks: List[Chunk] = []
-        with chunks_path.open("r", encoding="utf-8") as f:
+        with (index_dir / "chunks.jsonl").open("r", encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
                 obj = json.loads(line)
                 chunks.append(
                     Chunk(
@@ -147,18 +170,22 @@ class FaissIndex:
                         meta=obj.get("meta", {}),
                     )
                 )
+                chunks[-1].meta["faiss_id"] = int(obj["faiss_id"])
 
         return FaissIndex(index=index, chunks=chunks)
 
     def search(self, query_vec: np.ndarray, k: int) -> List[Tuple[float, Chunk]]:
         q = np.asarray(query_vec, dtype=np.float32).reshape(1, -1)
-        scores, idxs = self.index.search(q, k)
+        scores, labels = self.index.search(q, k)
 
         res: List[Tuple[float, Chunk]] = []
-        for score, idx in zip(scores[0].tolist(), idxs[0].tolist()):
-            if idx < 0 or idx >= len(self.chunks):
+        for score, fid in zip(scores[0].tolist(), labels[0].tolist()):
+            if fid == -1:
                 continue
-            res.append((float(score), self.chunks[idx]))
+            ch = self.by_id.get(int(fid))
+            if ch is None:
+                continue
+            res.append((float(score), ch))
         return res
 
 
@@ -381,21 +408,6 @@ class RagBot:
                 return repaired
 
         return draft
-
-
-def _env_str(name: str, fallback: str = "") -> str:
-    v = os.getenv(name, "").strip()
-    return v if v else fallback
-
-
-def _env_int(name: str, fallback: int) -> int:
-    v = os.getenv(name, "").strip()
-    if not v:
-        return fallback
-    try:
-        return int(v)
-    except ValueError:
-        return fallback
 
 
 def make_bot_from_env(

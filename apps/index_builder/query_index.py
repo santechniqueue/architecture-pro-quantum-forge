@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 
 import faiss
 import numpy as np
@@ -13,7 +13,7 @@ def e5_query(text: str) -> str:
 
 
 def load_chunks(path: Path) -> List[Dict[str, Any]]:
-    items = []
+    items: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -40,6 +40,11 @@ def main() -> None:
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     chunks = load_chunks(chunks_path)
 
+    by_faiss_id: Dict[int, Dict[str, Any]] = {}
+    for item in chunks:
+        fid = int(item.get("faiss_id"))
+        by_faiss_id[fid] = item
+
     index = faiss.read_index(str(index_path))
     model = SentenceTransformer(args.model)
 
@@ -49,10 +54,25 @@ def main() -> None:
     scores, ids = index.search(qv, args.k)
 
     print(f"\nQuery: {args.q}")
+    print(f"Index dir: {index_dir}")
+    print(f"Index ntotal: {index.ntotal}, chunks: {len(chunks)}")
     print(f"Top-{args.k} results:\n")
 
-    for rank, (idx, score) in enumerate(zip(ids[0].tolist(), scores[0].tolist()), start=1):
-        item = chunks[idx]
+    for rank, (raw_id, score) in enumerate(zip(ids[0].tolist(), scores[0].tolist()), start=1):
+        if raw_id == -1:
+            print(f"{rank}) score={score:.4f}")
+            print("   <no result>\n")
+            continue
+
+        fid = int(raw_id)
+
+        item = by_faiss_id.get(fid)
+        if not item:
+            print(f"{rank}) score={score:.4f}")
+            print(f"   <missing chunk for faiss_id={fid}>")
+            print("   Проверь, что chunks.jsonl и faiss.index из одного и того же прогона.\n")
+            continue
+
         m = item["meta"]
         text = item["text"].replace("\n", " ").strip()
         preview = text[:300] + ("…" if len(text) > 300 else "")

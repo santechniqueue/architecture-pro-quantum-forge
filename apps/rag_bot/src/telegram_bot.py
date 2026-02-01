@@ -6,22 +6,8 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+from apps.rag_bot.src.repl import _env_default_str, _env_default_int
 from rag_core import make_bot_from_env, RagBot
-
-
-def _env_default_str(name: str) -> str:
-    return os.getenv(name, "").strip()
-
-
-def _env_default_int(name: str, fallback: int) -> int:
-    v = os.getenv(name, "").strip()
-    if not v:
-        return fallback
-    try:
-        return int(v)
-    except ValueError:
-        return fallback
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Привет! Я RAG-бот. Спроси меня о базе знаний.")
