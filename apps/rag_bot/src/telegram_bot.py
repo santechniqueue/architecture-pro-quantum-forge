@@ -3,10 +3,10 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-from apps.rag_bot.src.repl import _env_default_str, _env_default_int
 from rag_core import make_bot_from_env, RagBot
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,14 +36,16 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=None, help="Top-K для поиска")
     args = ap.parse_args()
 
-    token = _env_default_str("TELEGRAM_BOT_TOKEN")
+    load_dotenv()
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN").strip()
     if not token:
         print("TELEGRAM_BOT_TOKEN is empty. Put it in .env or export env var.")
         sys.exit(1)
 
-    index_dir = args.index_dir or _env_default_str("RAG_INDEX_DIR")
-    embed_model = args.embed_model or _env_default_str("RAG_EMBED_MODEL") or "intfloat/multilingual-e5-base"
-    top_k = args.k if args.k is not None else _env_default_int("RAG_TOP_K", 5)
+    index_dir = args.index_dir or os.getenv("RAG_INDEX_DIR").strip()
+    embed_model = args.embed_model or os.getenv("RAG_EMBED_MODEL").strip() or "intfloat/multilingual-e5-base"
+    top_k = args.k if args.k is not None else int(os.getenv("RAG_TOP_K", 5))
 
     if not index_dir:
         raise SystemExit("index_dir is required (pass --index_dir or set RAG_INDEX_DIR)")
