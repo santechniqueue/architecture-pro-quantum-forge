@@ -1,0 +1,15 @@
+{
+  "mode": "full",
+  "model": "intfloat/multilingual-e5-base",
+  "embedding_dim": 768,
+  "kb_dir": "/Users/santechniqueue/Documents/Private/Dev/YandexArchitecture/architecture-pro-quantum-forge/knowledge_base/renamed_for_blank_parts",
+  "files": 35,
+  "chunks": 930,
+  "chunk_size_chars": 1400,
+  "chunk_overlap_chars": 200,
+  "index_kind": "ivf",
+  "index_type": "IndexIDMap2",
+  "nlist": 23,
+  "nprobe": 8,
+  "build_seconds": 46.051
+}

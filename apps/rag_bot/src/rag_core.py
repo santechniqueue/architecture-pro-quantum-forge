@@ -1,9 +1,11 @@
 import hashlib
 import json
 import os
+import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import faiss
 import numpy as np
@@ -51,6 +53,11 @@ def e5_query(text: str) -> str:
 
 def e5_passage(text: str) -> str:
     return "passage: " + normalize_ws(text)
+
+
+def _utc_ts_iso() -> str:
+    # ISO-8601 в UTC, удобно для агрегации логов между инстансами
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _clamp_text(s: str, max_chars: int) -> str:
@@ -134,6 +141,87 @@ def _has_required_sections(answer: str) -> bool:
     return True
 
 
+def _extract_answer_section(text: str) -> str:
+    if not text:
+        return ""
+    s = text
+    ia = s.find("\nОтвет:")
+    isrc = s.find("\nИсточники:")
+    if ia == -1:
+        return s.strip()
+    if isrc == -1:
+        return s[ia + len("\nОтвет:") :].strip()
+    return s[ia + len("\nОтвет:") : isrc].strip()
+
+
+def _is_successful_answer(answer: str, min_chars: int) -> bool:
+    if not answer:
+        return False
+
+    # если отдали ошибку — точно не успех
+    low = answer.lower()
+    if low.startswith("ошибка") or "ошибка при обработке запроса" in low:
+        return False
+
+    # формат обязателен в вашей реализации
+    if not _has_required_sections(answer):
+        return False
+
+    a = _extract_answer_section(answer).strip().lower()
+    if not a:
+        return False
+    if "я не знаю" in a:
+        return False
+
+    # простая эвристика по длине
+    if len(a) < min_chars:
+        return False
+
+    return True
+
+
+def _sources_for_log(retrieved: List[Tuple[float, "Chunk"]], max_n: int) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for score, ch in retrieved[: max_n if max_n > 0 else len(retrieved)]:
+        out.append(
+            {
+                "source_path": ch.meta.get("source_path", "unknown"),
+                "chunk_in_doc": ch.meta.get("chunk_in_doc", -1),
+                "start_char": ch.meta.get("start_char", -1),
+                "end_char": ch.meta.get("end_char", -1),
+                "score": float(score),
+            }
+        )
+    return out
+
+
+class RequestLogger:
+    def __init__(self, jsonl_path: Path, to_stdout: bool = True, enabled: bool = True) -> None:
+        self.jsonl_path = jsonl_path
+        self.to_stdout = to_stdout
+        self.enabled = enabled
+        self._lock = threading.Lock()
+
+        if self.enabled:
+            parent = self.jsonl_path.parent
+            if str(parent) not in ("", "."):
+                parent.mkdir(parents=True, exist_ok=True)
+
+    def log(self, obj: Dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+
+        line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+        with self._lock:
+            if self.to_stdout:
+                print(line, flush=True)
+
+            with self.jsonl_path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+                f.flush()
+
+
 @dataclass(frozen=True)
 class Chunk:
     chunk_id: str
@@ -155,8 +243,8 @@ class FaissIndex:
     @staticmethod
     def load(index_dir: Path) -> "FaissIndex":
         index = faiss.read_index(str(index_dir / "faiss.index"))
-        inner = index.index
-        if hasattr(inner, "nprobe"):
+        inner = getattr(index, "index", None)
+        if inner is not None and hasattr(inner, "nprobe"):
             inner.nprobe = int(os.getenv("FAISS_NPROBE", "8"))
 
         chunks: List[Chunk] = []
@@ -200,11 +288,15 @@ class RagBot:
     min_score: float = 0.35
 
     guard_mode: str = "both"
-
     repair_format: bool = True
 
     max_total_context_chars: int = 9_000
     max_chunk_chars: int = 2_000
+
+    # logging / analytics
+    logger: Optional[RequestLogger] = None
+    success_min_answer_chars: int = 40
+    log_max_sources: int = 20
 
     def embed_query(self, q: str) -> np.ndarray:
         vec = self.embedder.encode([e5_query(q)], normalize_embeddings=True, show_progress_bar=False)
@@ -242,11 +334,11 @@ class RagBot:
 
         if mode == "off":
             return (
-                    "Ты RAG-помощник. Отвечай на вопрос, опираясь на предоставленный контекст.\n"
-                    "Контекст — единственный источник истины: если в контексте есть прямое утверждение, "
-                    "которое отвечает на вопрос, используй его (можно дословно цитировать).\n"
-                    "Если в контексте нет ответа — скажи: «Я не знаю».\n\n"
-                    + format_rules
+                "Ты RAG-помощник. Отвечай на вопрос, опираясь на предоставленный контекст.\n"
+                "Контекст — единственный источник истины: если в контексте есть прямое утверждение, "
+                "которое отвечает на вопрос, используй его (можно дословно цитировать).\n"
+                "Если в контексте нет ответа — скажи: «Я не знаю».\n\n"
+                + format_rules
             )
 
         if mode in ("pre", "both"):
@@ -382,32 +474,68 @@ class RagBot:
         return self._call_llm(msgs, temperature=0.0)
 
     def answer(self, user_q: str) -> str:
-        retrieved = self.retrieve(user_q)
+        ts = _utc_ts_iso()
+        retrieved: List[Tuple[float, Chunk]] = []
+        ans: str = ""
+        err: Optional[str] = None
 
-        if not retrieved:
-            return "Ход мыслей:\n1. По запросу не найдено релевантных фрагментов.\n2. Без контекста нельзя ответить.\n3. Поэтому отвечаю «Я не знаю».\n4. Источников нет.\n\nОтвет: Я не знаю.\n\nИсточники:\n- (ничего не найдено)"
+        try:
+            retrieved = self.retrieve(user_q)
 
-        best_score = retrieved[0][0]
-        if best_score < self.min_score:
-            return (
-                "Ход мыслей:\n"
-                "1. Найденные фрагменты слишком слабо соответствуют запросу.\n"
-                "2. Использовать их для ответа рискованно.\n"
-                "3. Поэтому отвечаю «Я не знаю».\n"
-                "4. Источники приведены для прозрачности.\n\n"
-                "Ответ: Я не знаю.\n\n"
-                + _format_sources(retrieved)
-            )
+            if not retrieved:
+                ans = (
+                    "Ход мыслей:\n"
+                    "1. По запросу не найдено релевантных фрагментов.\n"
+                    "2. Без контекста нельзя ответить.\n"
+                    "3. Поэтому отвечаю «Я не знаю».\n"
+                    "4. Источников нет.\n\n"
+                    "Ответ: Я не знаю.\n\n"
+                    "Источники:\n- (ничего не найдено)"
+                )
+                return ans
 
-        messages = self.build_prompt(user_q, retrieved)
-        draft = self._call_llm(messages, temperature=0.2)
+            best_score = retrieved[0][0]
+            if best_score < self.min_score:
+                ans = (
+                    "Ход мыслей:\n"
+                    "1. Найденные фрагменты слишком слабо соответствуют запросу.\n"
+                    "2. Использовать их для ответа рискованно.\n"
+                    "3. Поэтому отвечаю «Я не знаю».\n"
+                    "4. Источники приведены для прозрачности.\n\n"
+                    "Ответ: Я не знаю.\n\n"
+                    + _format_sources(retrieved)
+                )
+                return ans
 
-        if self.repair_format and not _has_required_sections(draft):
-            repaired = self._repair_output_format(user_q, retrieved, draft)
-            if _has_required_sections(repaired):
-                return repaired
+            messages = self.build_prompt(user_q, retrieved)
+            draft = self._call_llm(messages, temperature=0.2)
 
-        return draft
+            if self.repair_format and not _has_required_sections(draft):
+                repaired = self._repair_output_format(user_q, retrieved, draft)
+                if _has_required_sections(repaired):
+                    ans = repaired
+                    return ans
+
+            ans = draft
+            return ans
+
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+            raise
+
+        finally:
+            if self.logger is not None:
+                entry: Dict[str, Any] = {
+                    "timestamp": ts,
+                    "query": user_q,
+                    "chunks_found": len(retrieved),
+                    "answer_length": len(ans) if ans else 0,
+                    "success": _is_successful_answer(ans, self.success_min_answer_chars) if ans else False,
+                    "sources": _sources_for_log(retrieved, self.log_max_sources),
+                }
+                if err:
+                    entry["error"] = err
+                self.logger.log(entry)
 
 
 def make_bot_from_env(
@@ -445,11 +573,20 @@ def make_bot_from_env(
     max_chunk_chars = _env_int("RAG_MAX_CHUNK_CHARS", 2000)
     min_score = float(_env_str("RAG_MIN_SCORE", "0.35"))
 
+    # logging settings
+    log_enabled = _env_int("RAG_LOG_ENABLED", 1) == 1
+    log_to_stdout = _env_int("RAG_LOG_STDOUT", 1) == 1
+    log_path = _env_str("RAG_LOG_PATH", "logs/rag_requests.jsonl")
+    success_min_chars = _env_int("RAG_SUCCESS_MIN_CHARS", 40)
+    log_max_sources = _env_int("RAG_LOG_MAX_SOURCES", 20)
+
     print("RAG_GUARD:", guard_mode)
 
     index = FaissIndex.load(index_dir=index_dir)
     embedder = SentenceTransformer(embed_model_name)
     llm = OpenAI(api_key=api_key, base_url=base_url)
+
+    logger = RequestLogger(jsonl_path=Path(log_path), to_stdout=log_to_stdout, enabled=log_enabled)
 
     return RagBot(
         index=index,
@@ -462,4 +599,7 @@ def make_bot_from_env(
         repair_format=repair_format,
         max_total_context_chars=max_total_chars,
         max_chunk_chars=max_chunk_chars,
+        logger=logger,
+        success_min_answer_chars=success_min_chars,
+        log_max_sources=log_max_sources,
     )
