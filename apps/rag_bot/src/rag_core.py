@@ -56,7 +56,6 @@ def e5_passage(text: str) -> str:
 
 
 def _utc_ts_iso() -> str:
-    # ISO-8601 в UTC, удобно для агрегации логов между инстансами
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -158,12 +157,10 @@ def _is_successful_answer(answer: str, min_chars: int) -> bool:
     if not answer:
         return False
 
-    # если отдали ошибку — точно не успех
     low = answer.lower()
     if low.startswith("ошибка") or "ошибка при обработке запроса" in low:
         return False
 
-    # формат обязателен в вашей реализации
     if not _has_required_sections(answer):
         return False
 
@@ -173,7 +170,6 @@ def _is_successful_answer(answer: str, min_chars: int) -> bool:
     if "я не знаю" in a:
         return False
 
-    # простая эвристика по длине
     if len(a) < min_chars:
         return False
 
@@ -293,7 +289,6 @@ class RagBot:
     max_total_context_chars: int = 9_000
     max_chunk_chars: int = 2_000
 
-    # logging / analytics
     logger: Optional[RequestLogger] = None
     success_min_answer_chars: int = 40
     log_max_sources: int = 20
@@ -424,7 +419,6 @@ class RagBot:
         system = self._build_system_prompt()
         msgs: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # Few-shot (1–2 примера из базы)
         shots = self.build_fewshot_examples()
         for s in shots:
             msgs.append({"role": "user", "content": f"Q: {s['q']}"})
@@ -549,14 +543,12 @@ def make_bot_from_env(
     model_name = _env_str("OPENAI_MODEL", "qwen2.5:7b-instruct")
     base_url = _env_str("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
 
-    # localhost -> 127.0.0.1 (IPv6 сюрпризы)
     base_url = base_url.replace("http://localhost", "http://127.0.0.1")
     base_url = base_url.replace("https://localhost", "https://127.0.0.1")
 
     if base_url.endswith(":11434"):
         base_url = base_url + "/v1"
 
-    # Ollama ключ не обязателен, но openai-sdk требует непустой
     if not api_key:
         if base_url.startswith("http://127.0.0.1:11434") or base_url.startswith("http://localhost:11434"):
             api_key = "ollama"
@@ -573,7 +565,6 @@ def make_bot_from_env(
     max_chunk_chars = _env_int("RAG_MAX_CHUNK_CHARS", 2000)
     min_score = float(_env_str("RAG_MIN_SCORE", "0.35"))
 
-    # logging settings
     log_enabled = _env_int("RAG_LOG_ENABLED", 1) == 1
     log_to_stdout = _env_int("RAG_LOG_STDOUT", 1) == 1
     log_path = _env_str("RAG_LOG_PATH", "logs/rag_requests.jsonl")
@@ -581,7 +572,7 @@ def make_bot_from_env(
     log_max_sources = _env_int("RAG_LOG_MAX_SOURCES", 20)
 
     print("RAG_GUARD:", guard_mode)
-
+    print("index_dir:", index_dir)
     index = FaissIndex.load(index_dir=index_dir)
     embedder = SentenceTransformer(embed_model_name)
     llm = OpenAI(api_key=api_key, base_url=base_url)

@@ -1,0 +1,100 @@
+@startuml
+title RAG Runtime: обработка запроса + логирование + точки сбоя
+
+actor User as U
+participant "Telegram Bot\n(telegram_bot.py)" as TG
+participant "RagBot\n(rag_core.py)" as RB
+participant "FaissIndex\n(rag_core.py)" as FI
+participant "Embedder\n(SentenceTransformer)" as EMB
+participant "FAISS\n(faiss.index)" as FAISS
+participant "Chunks Store\n(chunks.jsonl)" as CH
+participant "LLM\n(OpenAI/Ollama via OpenAI SDK)" as LLM
+participant "Format Repair\n(_repair_output_format)" as REP
+database "Request Log\n(JSONL + STDOUT)" as LOG
+
+== Получение запроса ==
+U -> TG : send message(text)
+TG -> TG : validate text != empty
+
+== Основной вызов ==
+TG -> RB : answer(query)
+
+group Retrieval (поиск контекста)
+  RB -> RB : retrieve(query)
+  RB -> EMB : embed_query(e5_query(query))
+  note right of EMB
+    Возможные точки отказа:
+    - модель эмбеддингов не загрузилась
+    - нехватка памяти/веса не найдены
+  end note
+  EMB --> RB : query_vec
+
+  RB -> FI : search(query_vec, top_k)
+  FI -> FAISS : index.search(vec, k)
+  note right of FAISS
+    Возможные точки отказа:
+    - faiss.index отсутствует/битый
+    - индекс пустой (n=0)
+  end note
+  FAISS --> FI : scores, ids
+
+  FI -> CH : map ids -> chunks (by_id)
+  note right of CH
+    Возможные точки отказа:
+    - chunks.jsonl отсутствует/битый JSON
+    - faiss_id не соответствует chunks.jsonl
+    - meta поломан (нет source_path, chunk_in_doc)
+  end note
+  CH --> FI : chunks
+  FI --> RB : retrieved[(score, chunk)]
+end group
+
+alt No chunks found
+  RB -> RB : build "I don't know" response
+  RB --> TG : response("Я не знаю" + Источники: none)
+else Low confidence (best_score < min_score)
+  RB -> RB : build "I don't know" with sources
+  RB --> TG : response("Я не знаю" + Источники: top-k)
+else Good retrieved context
+  group Prompt build + LLM
+    RB -> RB : build_prompt(query, retrieved)\n(system+fewshot+context)
+    RB -> LLM : chat.completions.create(messages, temperature=0.2)
+    note right of LLM
+      Возможные точки отказа:
+      - LLM недоступна (connection refused)
+      - timeout/429
+      - некорректный base_url/model
+    end note
+    LLM --> RB : draft answer
+  end group
+
+  alt Draft format invalid
+    group Repair format
+      RB -> REP : _repair_output_format(query, retrieved, draft)
+      REP -> LLM : chat.completions.create(temp=0.0)
+      note right of REP
+        Возможные точки отказа:
+        - repair ухудшил ответ (сократил детали)
+        - repair снова вернул неверный формат
+      end note
+      LLM --> REP : repaired
+      REP --> RB : repaired
+    end group
+  end
+
+  RB --> TG : final answer (draft or repaired)
+end
+
+group Logging
+  RB -> RB : compute metrics\n- timestamp\n- chunks_found\n- answer_length\n- success (heuristic)\n- sources list
+  RB -> LOG : append JSONL record + print STDOUT
+  note right of LOG
+    Возможные точки отказа:
+    - нет прав на запись
+    - диск заполнен
+  end note
+end
+
+TG --> U : reply_text(answer)
+
+@enduml
