@@ -1,0 +1,24 @@
+@startuml
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+component "Scheduler (Python)\nAPScheduler" as sched
+
+folder "Source\nknowledge_base/renamed" as src
+component "build_index.py\n(mode=incremental)" as builder
+database "FAISS index\nknowledge_base/index/faiss.index\n(IVF + IDMap2)" as faiss
+artifact "chunks.jsonl" as chunks
+artifact "index_state.json\n(file hashes + ids)" as state
+artifact "index_meta.json\n(stats)" as meta
+artifact "logs" as log
+
+sched   --> builder : daily 06:00\nor RUN_ON_START
+src     --> builder : scan *.md\nsha1 compare
+builder --> builder : chunking\nembed\nremove_ids/add_with_ids
+builder --> faiss : update vectors
+builder --> chunks : write
+builder --> state : write
+builder --> meta : write
+builder --> log : stdout/stderr + status
+
+@enduml

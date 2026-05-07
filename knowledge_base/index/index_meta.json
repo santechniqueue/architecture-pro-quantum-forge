@@ -1,0 +1,19 @@
+{
+  "mode": "incremental",
+  "model": "intfloat/multilingual-e5-base",
+  "embedding_dim": 768,
+  "kb_dir": "/Users/santechniqueue/Documents/Private/Dev/YandexArchitecture/architecture-pro-quantum-forge/knowledge_base/renamed",
+  "files_total": 35,
+  "chunks_total": 930,
+  "files_added": 2,
+  "files_changed": 0,
+  "files_deleted": 0,
+  "vectors_removed": 0,
+  "vectors_added": 2,
+  "chunk_size_chars": 1400,
+  "chunk_overlap_chars": 200,
+  "index_kind": "ivf",
+  "index_type": "IndexIDMap2",
+  "nprobe": 8,
+  "update_seconds": 49.924
+}

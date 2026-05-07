@@ -1,0 +1,11 @@
+{"id":"known-01","query":"Что такое Дран'саг?","expect_found":true,"expected_keywords":["континент"],"forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-02","query":"Кто такой Макмор?","expect_found":true,"expected_keywords":["король"],"forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-03","query":"Кто последний босс Наксрамаса?","expect_found":true,"expected_keywords":["Крангулзиркхар Вульзулзар"],"forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-04","query":"Когда на Докс'аг заявился Саргерас?","expect_found":true,"expected_keywords":["25 000", "25000"],",forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-05","query":"Кто открыл портал для четвёртого вторжения Пылающего Легиона?","expect_found":true,"expected_keywords":["Нер'Зулом", "Нер'Зул"],",forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-06","query":"О чем мечтала Кранзиркран Сагкир?","expect_found":true,"expected_keywords":["Макзул Кхармакмак", "уничтожить", "Дрангулталброн-быч"],",forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-07","query":"Кто такая Норкирзок Зулзирдранкхар?","expect_found":true,"expected_keywords":["волшебница", "подруга", "наследница", "правительница"],",forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"known-08","query":"Куда намеревался проникнуть Саргерас?","expect_found":true,"expected_keywords":["Бро'нвекмор Макморхел"],",forbidden_keywords":["Я не знаю."],"min_completeness":0.5}
+{"id":"missing-01","query":"Как работает электрополено?","expect_found":false}
+{"id":"missing-02","query":"Что такое Бро'нвекмор Макморхел?","expect_found":false}
+{"id":"missing-03","query":"Что такое Шаддрантордран Тра'кмак?","expect_found":false}

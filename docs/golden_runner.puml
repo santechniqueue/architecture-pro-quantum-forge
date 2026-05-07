@@ -1,0 +1,56 @@
+@startuml
+title Golden Runner: прогон golden_set + оценка + golden_results + точки сбоя
+
+participant "Golden Runner\n(golden_runner.py)" as GR
+participant "RagBot\n(rag_core.py)" as RB
+participant "Evaluator\n(answer_found/completeness/pass)" as EV
+database "Golden Results\n(JSONL + STDOUT)" as OUT
+
+GR -> GR : read golden_set.jsonl
+note right of GR
+  Возможные точки отказа:
+  - битый JSONL (ошибка json.loads)
+  - дубли id (портит аналитику)
+  - expect_found не соответствует реальной базе
+end note
+
+GR -> RB : make_bot_from_env(index_dir, embed_model, top_k)
+note right of RB
+  Возможные точки отказа:
+  - неверный index_dir (старый индекс)
+  - отсутствует faiss.index/chunks.jsonl
+  - embedder/LLM не поднялись
+end note
+
+== Прогон тестов ==
+loop for each test case
+  GR -> RB : retrieve(query)\n(для метрик и источников)
+  RB --> GR : retrieved + best_score + sources
+
+  GR -> RB : answer(query)\n(как в проде)
+  RB --> GR : answer_text (or exception)
+
+  group Оценка ответа
+    GR -> EV : extract "Ответ:" section\ncheck format_ok\ncheck says_idk\nkeyword completeness\n(optional semantic)
+    note right of EV
+      Возможные точки отказа:
+      - keyword-only полнота даёт ложные фейлы (синонимы/склонения)
+      - missing-case помечен неверно (тема есть в базе)
+      - format_ok=false из-за LLM/repair
+    end note
+    EV --> GR : result{answer_found, completeness, pass, missing_keywords, forbidden_hit}
+  end group
+
+  GR -> OUT : write JSONL line + print STDOUT
+  note right of OUT
+    Возможные точки отказа:
+    - нет прав на запись / диск
+    - конкурирующие прогоны пишут в один файл
+  end note
+end
+
+== Итоговая сводка ==
+GR -> GR : aggregate summary\n(pass_rate, avg_completeness)
+GR -> OUT : write summary line
+
+@enduml
